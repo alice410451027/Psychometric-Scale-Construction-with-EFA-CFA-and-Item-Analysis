@@ -1,0 +1,219 @@
+---
+title: "Scale Development and Validation: An Application of EFA and CFA"
+output:
+  html_document: default
+  pdf_document: default
+date: "2025-04-16"
+---
+Part I.Exploratory Factor Analysis (EFA)
+Step 0: Data Preparation
+```{r}
+options(scipen = 100) 
+library(psych)
+library(readxl)
+data.raw <- read.csv("~/Desktop/DT_data.csv")
+str(data.raw)
+```
+
+Step 1: Create a DataFrame Containing Only X1 to X28
+```{r}
+d1 <- data.raw[ , c(6:33)] 
+d1
+describeBy(d1)
+```
+
+Step 2: Test for Normality of Each Item
+Each item was tested for univariate normality using skewness and kurtosis.
+All items showed acceptable normality, with skewness and kurtosis values within ±3.
+```{r}
+d1$totscore<-rowSums(d1[1:28]) 
+d1$totscore
+d1$meanscore<-rowMeans(d1[1:28])
+d1$meanscore
+```
+
+Step 3: Create New Columns for Total Score and Mean Score
+Two new variables were generated:
+Total Score (sum of X1 to X28)
+Mean Score (average of X1 to X28)
+```{r}
+quantile(d1$totscore, c(.27, .73), na.rm=T)
+```
+
+Step 4: Define High and Low Scoring Groups Based on Total Score
+Participants were grouped into high and low scorers based on total score percentiles.
+```{r}
+d1$group[d1$totscore<=72]<-"low"
+d1$group[d1$totscore>=93]<-"high"
+```
+
+Step 5: Independent Samples t-Test
+An independent samples t-test was conducted to compare item scores between high and low groups.
+```{r}
+crfun <- function(x) #The function performs six tasks
+  c(var.test(x~d1$group)$statistic, #1.Perform variance test and extract F value
+    var.test(x~d1$group)$p.value,  #2.Extract p-value from variance test
+    t.test(x~d1$group,var.equal=TRUE)$statistic, #3.Extract t-value assuming equal variances
+    t.test(x~d1$group,var.equal=TRUE)$p.value, #4.Extract p-value assuming equal variances
+    t.test(x~d1$group,var.equal=FALSE)$statistic, #5.Extract t-value assuming unequal variances
+    t.test(x~d1$group,var.equal=FALSE)$p.value) #6.Extract p-value assuming unequal variances
+item_t <- sapply(d1[1:28],crfun) #sapply applies the function to each of the 28 items and returns a matrix
+
+item_t <- t(round(item_t,3)) #Transpose the matrix and round all values to three decimal places
+item_t.df <- as.data.frame(item_t) #Convert the matrix into a data frame for better readability
+item_t.df 
+
+names(item_t.df) <- c("F","p.F", "T","p.T","T.ne","p.T.ne") #Rename the columns for clarity
+item_t.df
+
+item_t.df$eql[item_t.df$p.F<0.05]<-"not eql" #Mark as "not eql" (unequal variances) when the F-test is significant
+item_t.df$eql[item_t.df$p.F>=0.05]<-"eql" #Mark as "eql
+
+item_t.df <- subset(item_t.df,select=c("F","p.F","eql","T","p.T","T.ne","p.T.ne"))
+item_t.df
+```
+
+Step 6: Handle Missing Values
+Missing data was checked and handled appropriately before further analysis.
+```{r}
+library(psych)
+itemanal <- describe(d1[1:28])
+itemanal <-as.data.frame(itemanal)
+itemanal
+sapply(d1[1:28], function(x) sum(is.na(x))) 
+```
+
+Step 7: Descriptive Statistics
+Descriptive statistics were computed for each item.
+A good mean score should fall between 1.62 and 4.22.
+```{r}
+describe(d1$meanscore)
+2.92+2*0.65
+2.92-2*0.65
+```
+
+Step 8: Calculate Cronbach’s α
+```{r}
+alphatot <- psych::alpha(d1[1:28],use="complete.obs")$total$raw_alpha 
+alphatot #Total Cronbach's α
+alphadrop <- psych::alpha(d1[1:28],use="complete.obs")$alpha.drop$raw_alpha 
+alphadrop 
+
+# item-total correlation(itot) and (itotwoi)
+itot <- psych::alpha(d1[1:28],use="complete.obs")$item.stats$r.cor 
+itot 
+itotwoi <- psych::alpha(d1[1:28],use="complete.obs")$item.stats$r.drop 
+alphastat <-as.data.frame(round(cbind(alphadrop, itotwoi),3))
+alphastat
+```
+
+Step 9: Assess Data Suitability for Factor Analysis
+Measures such as KMO and Bartlett’s test were used to verify suitability.
+Data was found suitable for factor analysis: χ2(378) = 3157.67, p < .001; KMO = .85.
+```{r}
+d2 <- d1[complete.cases(d1[1:28]),c(1:28)] 
+cortest.bartlett(d2[1:28]) #Bartlett test
+KMO(d2[1:28]) #KMO
+r <- round(cor(d2[1:28]),2) ##intercorrelation
+print(r)
+```
+
+Step 10: Determine Number of Factors and Run Exploratory Factor Analysis (EFA)
+The number of factors was determined using parallel analysis and scree plot.
+An EFA was conducted using principal axis factoring.
+```{r}
+#Eigenvalue
+ev<-fa(d2[1:28], nfactors=1, rotate="none",fm="pa")$e.values 
+ev 
+#Parallel Analysis
+fa.parallel(d2, n.obs = 297, fa='fa')
+print.psych(fa(d2[1:28], nfactors=6, rotate="varimax",fm="pa"), cut=0.30,sort=TRUE)
+```
+
+Step 11: Item Reduction and Re-run Factor Analysis
+Items were iteratively removed based on low loadings or cross-loadings.
+After item deletion, parallel analysis suggested 4 factors.
+```{r}
+fa(d2[-c(28,20,18,7,19,6,14,21)], rotate="none",fm="pa")$e.values 
+print.psych(fa(d2[-c(28,20,18,7,19,6,14,21)], nfactors=4, rotate="varimax",fm="pa"), cut=0.30,sort=TRUE) 
+fa.parallel(d2[-c(28,20,18,7,19,6,14,21)], n.obs = 297, fa='fa')
+```
+
+Step 12: Re-check and Finalize Items
+After multiple iterations, items X2, X6, X7, X18, and X20 were removed based on poor performance.
+```{r}
+fa(d2[-c(6,7,8,20)], nfactors=4, rotate="none",fm="pa")$e.values 
+print.psych(fa(d2[-c(6,7,8,20)], nfactors=4, rotate="varimax",fm="pa"),cut=0.30, sort=TRUE)
+```
+
+
+Step 13: Check Internal Consistency Within Each Factor
+Cronbach’s alpha was calculated to assess internal consistency for each factor.
+```{r}
+PA1 <- psych::alpha(d1[c(22,23,24,25,26,27)],use="complete.obs")$total$raw_alpha 
+PA1
+
+PA2 <- psych::alpha(d1[c(8,9,10,11,12,13)],use="complete.obs")$total$raw_alpha 
+PA2
+
+PA3 <- psych::alpha(d1[c(1,2,3,4,5)],use="complete.obs")$total$raw_alpha 
+PA3
+
+PA4 <- psych::alpha(d1[c(15,16,17)],use="complete.obs")$total$raw_alpha 
+PA4
+```
+
+Part II: Confirmatory Factor Analysis (CFA)
+Step 0: Data Preparation
+```{r}
+library(lavaan)
+options(scipen = 100)
+data <- read.csv("~/Desktop/112-2/心測/期末報告/DT_data.csv")
+str(data)
+```
+
+Step 1: Use Modification Indices to Improve Model Fit
+Model 1 (m1): Initial model using all items showed poor fit:
+χ²(318) = 1090.98, p < .001; CFI = .73, RMSEA = .09, SRMR = .12
+```{r}
+m1  <- 'f1 =~ X1+ X2+ X3+ X4+ X5+ X6+ X7
+        f2 =~ X8+ X9+ X10+ X11+ X12+ X13+ X14
+        f3 =~ X15+ X16+ X17+ X19+ X20+ X21
+        f4 =~ X22+ X23+ X24+ X25+ X26+ X27+ X28' 
+fitm1 <- cfa(m1, data=data) 
+summary(fitm1, fit.measures=TRUE, standardized=TRUE, rsquare=T) 
+sl1 <- standardizedSolution(fitm1) #standardized result
+modificationIndices(fitm1, minimum.value = 10)
+```
+Items were removed based on the factor loading (λ), R-squared, and Modification Index (MI).
+
+Model 6 (m6): Final model after item removal showed good fit:
+χ²(113) = 197.99, p < .001; CFI = .95, RMSEA = .05, SRMR = .06
+```{r}
+m6  <- 'f1 =~ X1+ X3+ X4+ X5
+        f2 =~ X8+ X9+ X10+ X11+ X13
+        f3 =~ X15+ X16+ X17
+        f4 =~ X22+ X23+ X24+ X25+ X26' 
+fitm6 <- cfa(m6, data=data) 
+summary(fitm6, fit.measures=TRUE, standardized=TRUE, rsquare=T) 
+sl6 <- standardizedSolution(fitm6) #standardized result
+sl6
+modificationIndices(fitm6, minimum.value = 10)
+```
+
+Step 2: Plot Final CFA Structure
+A diagram of the final CFA model was generated to visually present factor-item relationships.
+```{r}
+library(semPlot)
+getwd()# check the working directory
+semPaths(fitm6,               #object generated by cfa()
+         what = "path",          # Type of diagram to plot
+         whatLabels = "std",     # Standardized estimates
+         style = "ram",         # Style of the diagram; "ram"
+         layout = "tree",        # Layout of the diagram
+         edge.label.cex = 1,     # Size of edge labels
+         nCharNodes = 5,         # Number of characters per node
+         sizeMan = 5,           # Size of manifest variables
+         sizeLat = 5)           # Size of latent variables
+```
+
